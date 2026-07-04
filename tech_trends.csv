@@ -1,0 +1,156 @@
+import streamlit as st
+import pandas as pd
+import plotly.express as px
+from sklearn.linear_model import LinearRegression
+import numpy as np
+
+st.set_page_config(
+    page_title="Technology Trend Forecasting System",
+    page_icon="📈",
+    layout="wide"
+)
+
+st.title("📈 Technology Trend Forecasting System")
+st.write("Analyze technology demand and forecast future job-market trends.")
+
+# Load dataset
+df = pd.read_csv("tech_trends.csv")
+df["Date"] = pd.to_datetime(df["Date"])
+
+# Sidebar
+st.sidebar.header("Dashboard Filters")
+
+technologies = df["Technology"].unique()
+selected_technology = st.sidebar.selectbox(
+    "Select a Technology",
+    technologies
+)
+
+months_to_predict = st.sidebar.slider(
+    "Months to Forecast",
+    min_value=1,
+    max_value=12,
+    value=6
+)
+
+# Filter selected technology
+tech_df = df[df["Technology"] == selected_technology].copy()
+tech_df = tech_df.sort_values("Date")
+
+# Dashboard metrics
+latest_postings = tech_df["Job_Postings"].iloc[-1]
+latest_salary = tech_df["Average_Salary"].iloc[-1]
+growth = ((tech_df["Job_Postings"].iloc[-1] - tech_df["Job_Postings"].iloc[0])
+          / tech_df["Job_Postings"].iloc[0]) * 100
+
+col1, col2, col3 = st.columns(3)
+col1.metric("Latest Job Postings", latest_postings)
+col2.metric("Latest Average Salary", f"₹ {latest_salary:,.0f}")
+col3.metric("Demand Growth", f"{growth:.1f}%")
+
+st.divider()
+
+# Demand trend graph
+st.subheader(f"Job Demand Trend: {selected_technology}")
+
+fig_trend = px.line(
+    tech_df,
+    x="Date",
+    y="Job_Postings",
+    markers=True,
+    title=f"Job Postings Growth for {selected_technology}"
+)
+
+st.plotly_chart(fig_trend, use_container_width=True)
+
+# Salary graph
+st.subheader(f"Salary Trend: {selected_technology}")
+
+fig_salary = px.line(
+    tech_df,
+    x="Date",
+    y="Average_Salary",
+    markers=True,
+    title=f"Average Salary Growth for {selected_technology}"
+)
+
+fig_salary.update_yaxes(tickprefix="₹ ")
+st.plotly_chart(fig_salary, use_container_width=True)
+
+# Forecast using Linear Regression
+st.subheader(f"Forecasted Demand for {selected_technology}")
+
+tech_df["Month_Number"] = range(len(tech_df))
+
+X = tech_df[["Month_Number"]]
+y = tech_df["Job_Postings"]
+
+model = LinearRegression()
+model.fit(X, y)
+
+future_month_numbers = np.arange(
+    len(tech_df),
+    len(tech_df) + months_to_predict
+).reshape(-1, 1)
+
+predictions = model.predict(future_month_numbers)
+
+future_dates = pd.date_range(
+    start=tech_df["Date"].max(),
+    periods=months_to_predict + 1,
+    freq="MS"
+)[1:]
+
+forecast_df = pd.DataFrame({
+    "Date": future_dates,
+    "Forecasted Job Postings": predictions.astype(int)
+})
+
+historical_df = tech_df[["Date", "Job_Postings"]].copy()
+historical_df.columns = ["Date", "Job Postings"]
+historical_df["Type"] = "Historical"
+
+forecast_chart_df = forecast_df.copy()
+forecast_chart_df.columns = ["Date", "Job Postings"]
+forecast_chart_df["Type"] = "Forecast"
+
+combined_df = pd.concat([historical_df, forecast_chart_df])
+
+fig_forecast = px.line(
+    combined_df,
+    x="Date",
+    y="Job Postings",
+    color="Type",
+    markers=True,
+    title=f"{months_to_predict}-Month Demand Forecast"
+)
+
+st.plotly_chart(fig_forecast, use_container_width=True)
+
+st.subheader("Forecast Results")
+st.dataframe(forecast_df, use_container_width=True)
+
+# Compare all technologies
+st.subheader("Technology Demand Comparison")
+
+comparison_df = df.groupby("Technology")["Job_Postings"].sum().reset_index()
+
+fig_compare = px.bar(
+    comparison_df,
+    x="Technology",
+    y="Job_Postings",
+    text="Job_Postings",
+    title="Total Job Demand by Technology"
+)
+
+st.plotly_chart(fig_compare, use_container_width=True)
+
+# Insight
+highest_tech = comparison_df.loc[
+    comparison_df["Job_Postings"].idxmax(),
+    "Technology"
+]
+
+st.success(
+    f"Insight: {highest_tech} has the highest overall job demand in this dataset."
+)
